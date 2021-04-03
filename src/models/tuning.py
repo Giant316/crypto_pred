@@ -1,4 +1,4 @@
-from src.features.utils import DataGenerator
+import src.features.utils as utils
 import pandas as pd
 import tensorflow as tf
 from ray.tune.integration.keras import TuneReportCallback
@@ -14,7 +14,7 @@ def train_mlp(config):
     df = df[['Close']]
 
     # a window with number of time step of input = 6 
-    window = DataGenerator(
+    window = utils.DataGenerator(
         input_width=6, label_width=1, offset=1, 
         label_columns=df.columns.to_list(), df=df)
         
