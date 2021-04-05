@@ -63,6 +63,6 @@ if __name__ == "__main__":
             "hidden": tune.grid_search([1, 2]),
             "activation": tune.choice(['relu', 'linear'])
         })
-    logger.info("Best hyperparameters found were: {analysis.best_config}")
+    logger.info("Best hyperparameters found were: %s", analysis.best_config)
 
     ray.shutdown()
