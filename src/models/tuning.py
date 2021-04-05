@@ -5,6 +5,7 @@ from ray.tune.integration.keras import TuneReportCallback
 import ray
 from ray import tune
 from ray.tune.schedulers import AsyncHyperBandScheduler
+import logging 
 
 def train_mlp(config):
     url = 'https://raw.githubusercontent.com/Giant316/crypto_scrapy/main/BTC.csv'
@@ -34,13 +35,18 @@ def train_mlp(config):
     })])
 
 if __name__ == "__main__":
+    exp_name = "Tune_MLP"
+    logging.basicConfig(filename= f"./reports/{exp_name}.log", format='%(asctime)s %(message)s')
+    logger = logging.getLogger() # create a logger object
+    logger.setLevel(logging.INFO)
+
     ray.init(num_cpus=4)# if args.smoke_test else None)
     sched = AsyncHyperBandScheduler(
         time_attr="training_iteration", max_t=400, grace_period=20)
 
     analysis = tune.run(
         train_mlp,
-        name="exp",
+        name=exp_name,
         scheduler=sched,
         metric="MAPE",
         mode="max",
@@ -54,9 +60,9 @@ if __name__ == "__main__":
             "gpu": 0
         },
         config={
-            "hidden": tune.randint(1, 2),
+            "hidden": tune.grid_search([1, 2]),
             "activation": tune.choice(['relu', 'linear'])
         })
-    print("Best hyperparameters found were: ", analysis.best_config)
+    logger.info("Best hyperparameters found were: ", analysis.best_config)
 
     ray.shutdown()
