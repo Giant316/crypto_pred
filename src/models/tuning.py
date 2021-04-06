@@ -18,7 +18,7 @@ import argparse
 src_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) # file path of src directory
 config_file = "mlp.ini"
 
-def read_config(self, num=0):
+def read_config(num=0):
     # process the configuration file of the experiment
     config = configparser.ConfigParser()
     config_path = os.path.join(src_dir, config_file)
@@ -94,7 +94,7 @@ def run_experiment(exp_num=0):
         input_width=ipw, label_width=lbw, offset=ofs, 
         label_columns=df.columns.to_list(), df=df)
 
-    analysis = run_tune(run_name=exp, window_size=win) 
+    analysis = run_tune(exp_name=exp, window_size=win) 
 
     # log tuning results  
     logging.basicConfig(filename= f"./reports/{exp}.log", format='%(asctime)s %(message)s')
@@ -112,7 +112,7 @@ if __name__ == "__main__":
 
     # Execute tuning runs
     for n in range(args.nExp):
-        run_experiments(n)
+        run_experiment(n)
 
     
 
