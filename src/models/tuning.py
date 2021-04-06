@@ -10,14 +10,15 @@ import logging
 import configparser
 import os
 
-curr_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# need to store the absolute path of the config file as the module is loaded -> config != directory as this script
+# use dirname twice to repeatedly "climb higher" up to the directory, config.ini does not reside on the same level as this script
+src_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) # file path of src directory
+config_file = "mlp.ini"
 
 def read_config(self, no=0):
+    # process the configuration file of the experiment
     config = configparser.ConfigParser()
-    
-    # need to store the absolute path of the config file as the module is loaded -> config != directory as this script
-    # use dirname twice to repeatedly "climb higher" up to the directory, config.ini does not reside on the same level as this script
-    config_path = os.path.join(curr_dir, "config.ini")
+    config_path = os.path.join(src_dir, config_file)
     
     config.read(config_path)
     sections = config.sections()
@@ -30,7 +31,7 @@ def read_config(self, no=0):
     return exp, dat, inw, lpw, ofs
 
 def run(run_name, window_size):
-    ray.init(num_cpus=4)# if args.smoke_test else None)
+    ray.init(num_gpus=2)
     sched = AsyncHyperBandScheduler(time_attr="training_iteration", max_t=400, grace_period=20)
 
     analysis = tune.run(
@@ -45,8 +46,8 @@ def run(run_name, window_size):
         },
         num_samples=10,
         resources_per_trial={
-            "cpu": 2,
-            "gpu": 0
+            "cpu": 0,
+            "gpu": 2
         },
         config={
             "hidden": tune.grid_search([1, 2]),
@@ -58,6 +59,8 @@ def run(run_name, window_size):
     return analysis
 
 def train_mlp(config): 
+    tf.debugging.set_log_device_placement(True)
+    
     model = tf.keras.Sequential([
     tf.keras.layers.Flatten(), # convert to 1D: (time, features) => (time*features) 
     tf.keras.layers.Dense(config["hidden"], config['activation']),
@@ -78,7 +81,7 @@ if __name__ == "__main__":
     exp, dat, ipw, lbw, ofs = read_config(1) # get second experiment's config
     
     # retrieve file path
-    csv_path = os.path.join(os.path.dirname(curr_dir), dat)
+    csv_path = os.path.join(os.path.dirname(src_dir), dat) # climb higher to crypto_predict dir
     df = pd.read_csv(csv_path)
 
     # univariate time series 
@@ -86,7 +89,7 @@ if __name__ == "__main__":
 
     # a window with number of time step of input = 6 
     win6 = utils.DataGenerator(
-        input_width=6, label_width=1, offset=1, 
+        input_width=ipw, label_width=lbw, offset=ofs, 
         label_columns=df.columns.to_list(), df=df)
 
     exp_name = "Tune_MLP"
@@ -99,5 +102,5 @@ if __name__ == "__main__":
     logger.info("%s with configuration of Input Width: %s", exp, ipw)
     logger.info("results save in folder: %s", exp_name)    
     logger.info("Best hyperparameters: Hidden: %s; Activation: %s", analysis.best_config["hidden"], analysis.best_config['activation'])
-    print("Best hyperparameters found were: Hidden: %s; Activation: %s", analysis.best_config["hidden"], analysis.best_config['activation'])
+    print("Best hyperparameters found were: Hidden: {}; Activation: {}".format(analysis.best_config["hidden"], analysis.best_config['activation']))
     
