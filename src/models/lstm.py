@@ -59,8 +59,6 @@ class BlockingTimeSeriesSplit():
 #### Univariate LSTM with Hyperopt 
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
-%matplotlib inline
 
 # For preprocessing
 from sklearn.metrics import mean_squared_error
@@ -77,7 +75,7 @@ from tqdm.keras import TqdmCallback
 from hyperopt import Trials, STATUS_OK, tpe, fmin, hp
 from hyperopt.pyll.base import scope #quniform returns float, some parameters require int; use this to force int
 
-from sklearn.model_selection import TimeSeriesSplit
+#from sklearn.model_selection import TimeSeriesSplit
 
 use_intra = True
 
