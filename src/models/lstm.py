@@ -1,5 +1,62 @@
-#### Univariate LSTM with Hyperopt 
+class ExpandingTimeSeriesSplit():    
+    def __init__(self,
+                 n_splits=5,
+                 max_train_size=None,
+                 test_size=None,
+                 gap=0):
+        self.max_train_size = max_train_size
+        self.test_size = test_size
+        self.gap = gap
+        self.n_splits = n_splits
+        
+    def split(self, X):
+        n_samples = len(X)
+        n_splits = self.n_splits
+        n_folds = n_splits + 1
+        gap = self.gap
+        test_size = self.test_size if self.test_size is not None \
+            else n_samples // n_folds
 
+        # Make sure we have enough samples for the given split parameters
+        if n_folds > n_samples:
+            raise ValueError(
+                (f"Cannot have number of folds={n_folds} greater"
+                 f" than the number of samples={n_samples}."))
+        if n_samples - gap - (test_size * n_splits) <= 0:
+            raise ValueError(
+                (f"Too many splits={n_splits} for number of samples"
+                 f"={n_samples} with test_size={test_size} and gap={gap}."))
+
+        indices = np.arange(n_samples)
+        test_starts = range(n_samples - n_splits * test_size,
+                            n_samples, test_size)
+
+        for test_start in test_starts:
+            train_end = test_start - gap
+            if self.max_train_size and self.max_train_size < train_end:
+                yield (indices[train_end - self.max_train_size:train_end],
+                       indices[test_start:test_start + test_size])
+            else:
+                yield (indices[:train_end],
+                       indices[test_start:test_start + test_size])
+
+class BlockingTimeSeriesSplit():
+    def __init__(self, n_splits, test_size=1):
+        self.n_splits = n_splits
+        self.test_size = test_size
+
+    def split(self, X):
+        n_samples = len(X)
+        k_fold_size = n_samples // self.n_splits
+        indices = np.arange(n_samples)
+
+        for i in range(self.n_splits):
+            start = i * k_fold_size
+            stop = start + k_fold_size
+            yield indices[start: stop - self.test_size], indices[stop - self.test_size: stop]
+
+
+#### Univariate LSTM with Hyperopt 
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -118,10 +175,11 @@ def lstm(params):
     
     es = EarlyStopping(monitor='val_loss',mode='min',verbose=1,patience=15)
 
-    tscv = TimeSeriesSplit(n_splits = 3)
+    #tscv = TimeSeriesSplit(n_splits = 3)
+    btscv = BlockingTimeSeriesSplit(n_splits=10, test_size=90)
     cv_train = []
     cv_test = []
-    for train_index, test_index in tscv.split(df_train):
+    for train_index, test_index in btscv.split(df_train):
         cv_train.append(df_train.iloc[train_index])
         cv_test.append(df_train.iloc[test_index])
     
