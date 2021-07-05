@@ -57,6 +57,7 @@ class BlockingTimeSeriesSplit():
 
 
 #### Univariate LSTM with Hyperopt 
+from typing_extensions import Required
 import numpy as np
 import pandas as pd
 
@@ -79,9 +80,18 @@ from hyperopt.pyll.base import scope #quniform returns float, some parameters re
 
 import logging
 import os 
+import argparse
+
+parser = argparse.ArgumentParser()
+parser.add_argument("-w", "--window_size", type=int, required=True)
+parser.add_argument("-t", "--target", type=str, required=True)
+arg = parser.parse_args()
+
+# Experiment Setup
+target = [arg.target]
+window_size = arg.window_size
 
 use_intra = True
-
 if use_intra:
     btc_intraday = 'https://raw.githubusercontent.com/Giant316/crypto_scrapy/main/BTC_intraday.csv'
     eth_intraday = 'https://raw.githubusercontent.com/Giant316/crypto_scrapy/main/ETH_intraday.csv'
@@ -124,10 +134,6 @@ else:
     df_eth = load_data(eth_path, "ETH")
     df_xrp = load_data(xrp_path, "XRP")
     df = pd.concat([df_btc[['BTC']].dropna().loc['2016':'2020'], df_eth[['ETH']].dropna().loc['2016':'2020'], df_xrp[['XRP']].dropna().loc['2016':'2020']], axis=1)
-
-# Experiment Setup
-target = ['BTC']
-window_size = 5
 
 train_weight = 0.8
 split = int(len(df)*train_weight)
@@ -231,9 +237,10 @@ print("Hyperparameter Tuning Completed.")
 print(best)
 
 # log tuning results 
-proj_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) # find the root directory of the project
-logging.basicConfig(filename= f"{proj_root}/reports/lstm_tuning/{target[0]}_{window_size}.log", format='%(asctime)s %(message)s')
+# find the root directory of the project
+proj_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) 
 
+logging.basicConfig(filename= f"{proj_root}/reports/lstm_tuning/{target[0]}_{window_size}.log", format='%(asctime)s %(message)s')
 logger = logging.getLogger() # create a logger object
 logger.setLevel(logging.INFO)
 logger.info("Values of Best parameters of %s with window size:%s", target[0], window_size)
