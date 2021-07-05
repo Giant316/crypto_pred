@@ -77,6 +77,9 @@ from hyperopt.pyll.base import scope #quniform returns float, some parameters re
 
 #from sklearn.model_selection import TimeSeriesSplit
 
+import logging
+import os 
+
 use_intra = True
 
 if use_intra:
@@ -224,4 +227,18 @@ best = fmin(lstm, space, algo=tpe.suggest, max_evals=50, trials=trials)
 best_model = trials.results[np.argmin([r['loss'] for r in trials.results])]['model']
 best_params = trials.results[np.argmin([r['loss'] for r in trials.results])]['params']
 
+print("Hyperparameter Tuning Completed.")
 print(best)
+
+# log tuning results 
+proj_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) # find the root directory of the project
+logging.basicConfig(filename= f"{proj_root}/reports/lstm_tuning/{target[0]}_{window_size}.log", format='%(asctime)s %(message)s')
+
+logger = logging.getLogger() # create a logger object
+logger.setLevel(logging.INFO)
+logger.info("Values of Best parameters of %s with window size:%s", target[0], window_size)
+logger.info("Batch Size:%s", best['batch_size'])
+logger.info("Hidden Units:%s", best['units'])
+logger.info("Hidden Layers:%s", best['layers'])
+logger.info("Dropout Rate:%s", best['rate'])
+logger.info("L1 Regulizer:%s", best['l1_reg'])    
