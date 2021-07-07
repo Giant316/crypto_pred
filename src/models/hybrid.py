@@ -154,3 +154,16 @@ best_params = trials.results[np.argmin([r['loss'] for r in trials.results])]['pa
 
 print("Hyperparameter Tuning Completed.")
 print(best)
+
+# log tuning results 
+# find the root directory of the project
+proj_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) 
+
+logging.basicConfig(filename= f"{proj_root}/reports/hybrid_tuning/{target[0]}_{window_size}.log", format='%(asctime)s %(message)s')
+logger = logging.getLogger() # create a logger object
+logger.setLevel(logging.INFO)
+logger.info("Values of Best parameters of %s with window size:%s", target[0], window_size)
+logger.info("Batch Size:%s", best['batch_size'])
+logger.info("Hidden Units:%s", best['units'])
+logger.info("Dropout Rate:%s", best['rate'])
+logger.info("L1 Regulizer:%s", best['l1_reg'])
