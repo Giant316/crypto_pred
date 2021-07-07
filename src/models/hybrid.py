@@ -1,7 +1,6 @@
 import numpy as np
 import pandas as pd
 import statsmodels.api as sm
-import os
 from sklearn.metrics import mean_squared_error
 from keras.callbacks import EarlyStopping
 from keras.models import Sequential
@@ -22,6 +21,8 @@ from hyperopt import Trials, STATUS_OK, tpe, fmin, hp
 from hyperopt.pyll.base import scope #quniform returns float, some parameters require int; use this to force int
 from tqdm.keras import TqdmCallback
 
+import src.features.utils as utils
+import os
 import logging
 import argparse
 
