@@ -30,14 +30,23 @@ import json
 parser = argparse.ArgumentParser()
 parser.add_argument("-w", "--window_size", type=int, default=5)
 parser.add_argument("-t", "--target", type=str, default='BTC')
-parser.add_argument('-d', "--intra", action='store_false')
-parser.add_argument('-r', "--tune", action='store_false')
+parser.add_argument('-d', "--intra", action='store_false')# omit this flag if want to use intra data
+parser.add_argument('-r', "--tune", action='store_false') # omit this if want to tune the model 
+parser.add_argument('-m', "--model", type=str, required=True)
 arg = parser.parse_args()
 
 # Experiment Setup
 target = [arg.target]
 window_size = arg.window_size
 use_intra = arg.intra # by default = True if -d flag is not used
+model_type = arg.model
+
+if(model_type.lower() == "lstm"):
+    model_type = "lstm"
+elif(model_type.lower() == "mlp"):
+    model_type = "mlp"
+else:
+    sys.exit("Invalid Model Input Argument!")
 
 def get_dataframe(target, use_intra):
     if use_intra:
@@ -98,8 +107,8 @@ def get_dataframe(target, use_intra):
 
     return pd.DataFrame(df_train), pd.DataFrame(df_test)
 
-def read_log():
-    tune_result_dir = os.path.join(proj_root, "reports", "lstm_tuning")
+def read_log(model_type):
+    tune_result_dir = os.path.join(proj_root, "reports", model_type + "_tuning")
     if not Path(tune_result_dir).exists():
         sys.exit("Tuning Result folder does not exist. Exit Modelling!")
 
@@ -166,6 +175,26 @@ def lstm(Xtrain, ytrain, params):
                     )
     return model, result
 
+def mlp(Xtrain, ytrain, params):
+    es = EarlyStopping(monitor='val_loss',mode='min',verbose=1,patience=15)
+    model = Sequential()
+    model.add(Dense(units=params['units'], activation=params['activation'], input_dim=window_size, kernel_regularizer=l1(params['l1_reg'])))
+    model.add(Dropout(rate=params['rate']))
+    model.add(Dense(1))
+    model.summary()
+    model.compile(optimizer='Adam', loss='mean_squared_error')
+
+    # reshape the input for MLP input (batch, window_size)
+    Xtrain = Xtrain.reshape(Xtrain.shape[0:2])
+    ytrain = ytrain.reshape(ytrain.shape[0:2])
+    
+    result = model.fit(Xtrain, ytrain, verbose=0, validation_split=0.1,
+                    batch_size=params['batch_size'],
+                    epochs=200,
+                    callbacks = [es,TqdmCallback(verbose=1)]
+                    )
+    return model, result
+
 def tune(params):
     #tscv = TimeSeriesSplit(n_splits = 3)
     btscv = utils.BlockingTimeSeriesSplit(n_splits=10, test_size=90)
@@ -180,8 +209,14 @@ def tune(params):
         # Generate data for cross validation with given window    
         cv_Xtrain, cv_ytrain, cv_Xtest, cv_ytest = format_data(train, test, window=window_size)
         
-        # LSTM model
-        model, _ = lstm(cv_Xtrain, cv_ytrain)
+        if(model_type == "lstm"):
+            # LSTM model
+            model, _ = lstm(cv_Xtrain, cv_ytrain, params)
+        else:
+            model, _ = mlp(cv_Xtrain, cv_ytrain, params)
+            cv_Xtest = cv_Xtest.reshape(cv_Xtest.shape[0:2])
+            cv_ytest = cv_ytest.reshape(cv_ytest.shape[0:2])
+
         cv_predictions = model.predict(cv_Xtest).reshape(-1,)
         cv_trueValues = cv_ytest
         rmse.append(np.sqrt(mean_squared_error(cv_trueValues, cv_predictions)))
@@ -196,16 +231,25 @@ if(arg.tune): # default without -r flag
     '''
         Tuning Model using Hyperopt with Cross Validation
     '''
-    save_result_path =  Path(os.path.join(proj_root, "reports", "lstm_tuning"))
-    if not save_result_path.exists():
-        save_result_path.mkdir(parents=True)
-
-    space = {'rate'       : hp.uniform('rate',0.01,0.5),
+    if(model_type == "lstm"):
+        space = {'rate'       : hp.uniform('rate',0.01,0.5),
             'units'      : scope.int(hp.quniform('units',10,100,5)),
             'batch_size' : scope.int(hp.quniform('batch_size',100,250,25)),
             'layers'     : scope.int(hp.quniform('layers',1,3,1)),
             'l1_reg'     : hp.uniform('l1_reg',0.01,0.5)
             }
+    else:
+        space = {'rate'       : hp.uniform('rate',0.01,0.5),
+            'units'      : scope.int(hp.quniform('units',10,100,5)),
+            'batch_size' : scope.int(hp.quniform('batch_size',100,250,25)),
+            'l1_reg'     : hp.uniform('l1_reg',0.01,0.5),
+            'activation' : hp.choice('activation', ['sigmoid', 'relu', 'tanh'])
+            }
+
+    save_result_path =  Path(os.path.join(proj_root, "reports", model_type + "_tuning"))
+    if not save_result_path.exists():
+        save_result_path.mkdir(parents=True)
+
 
     trials = Trials()
     best = fmin(tune, space, algo=tpe.suggest, max_evals=50, trials=trials)
@@ -225,16 +269,19 @@ if(arg.tune): # default without -r flag
     logger.info("Values of Best parameters of %s with window size:%s", target[0], window_size)
     logger.info("Batch Size:%s", best['batch_size'])
     logger.info("Hidden Units:%s", best['units'])
-    logger.info("Hidden Layers:%s", best['layers'])
+    if(model_type == "lstm"):
+        logger.info("Hidden Layers:%s", best['layers'])
+    else:
+        logger.info("Activation:%s", best['activation'])
     logger.info("Dropout Rate:%s", best['rate'])
     logger.info("L1 Regulizer:%s", best['l1_reg'])
 
 else:
-    save_model_path = Path(os.path.join(proj_root, "reports", "trained_models", "lstm"))
+    save_model_path = Path(os.path.join(proj_root, "reports", "trained_models", model_type))
     if not save_model_path.exists():
         save_model_path.mkdir(parents=True) # set parents = True to create nested folder as well
 
-    result_dict = read_log()
+    result_dict = read_log(model_type)
     for idx in result_dict:
         params = result_dict[idx]
         # retrieve saved hyperparameter 
