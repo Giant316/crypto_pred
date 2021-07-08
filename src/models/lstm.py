@@ -21,7 +21,8 @@ from hyperopt.pyll.base import scope #quniform returns float, some parameters re
 import src.features.utils as utils
 # for files organization
 import logging
-import os 
+import os
+import sys
 import argparse
 from pathlib import Path
 import json
@@ -99,6 +100,9 @@ def get_dataframe(target, use_intra):
 
 def read_log():
     tune_result_dir = os.path.join(proj_root, "reports", "lstm_tuning")
+    if not Path(tune_result_dir).exists():
+        sys.exit("Tuning Result folder does not exist. Exit Modelling!")
+        
     log_files = os.listdir(tune_result_dir)
     log_files.sort()
     keys = ["target", "window_size", "batch_size", "units", "layers", "rate", "l1_reg"]
