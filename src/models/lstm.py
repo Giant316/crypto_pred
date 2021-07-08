@@ -29,7 +29,7 @@ import json
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-w", "--window_size", type=int, default=5)
-parser.add_argument("-t", "--target", type=str, default=['BTC'])
+parser.add_argument("-t", "--target", type=str, default='BTC')
 parser.add_argument('-d', "--intra", action='store_false')
 parser.add_argument('-r', "--tune", action='store_false')
 arg = parser.parse_args()
@@ -102,7 +102,7 @@ def read_log():
     tune_result_dir = os.path.join(proj_root, "reports", "lstm_tuning")
     if not Path(tune_result_dir).exists():
         sys.exit("Tuning Result folder does not exist. Exit Modelling!")
-        
+
     log_files = os.listdir(tune_result_dir)
     log_files.sort()
     keys = ["target", "window_size", "batch_size", "units", "layers", "rate", "l1_reg"]
