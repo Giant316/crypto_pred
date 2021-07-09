@@ -184,7 +184,7 @@ def mlp(Xtrain, ytrain, params):
     activation = ['sigmoid', 'relu', 'tanh']
     es = EarlyStopping(monitor='val_loss',mode='min',verbose=1,patience=15)
     model = Sequential()
-    model.add(Dense(units=params['units'], activation=activation[params['activation']], input_dim=window_size, kernel_regularizer=l1(params['l1_reg'])))
+    model.add(Dense(units=params['units'], activation=activation[params['activation']], input_dim=params['window_size'], kernel_regularizer=l1(params['l1_reg'])))
     model.add(Dropout(rate=params['rate']))
     model.add(Dense(1))
     model.summary()
