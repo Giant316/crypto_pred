@@ -114,7 +114,12 @@ def read_log(model_type):
 
     log_files = os.listdir(tune_result_dir)
     log_files.sort()
-    keys = ["target", "window_size", "batch_size", "units", "layers", "rate", "l1_reg"]
+    if(model_type == "lstm"):
+        s = "layers"
+    else:
+        s = "activation"
+        
+    keys = ["target", "window_size", "batch_size", "units"] +[s] + ["rate", "l1_reg"]
     hyper_dict = {}
     for idx, f in enumerate(log_files):
         fpath = os.path.join(tune_result_dir, f)
@@ -176,9 +181,10 @@ def lstm(Xtrain, ytrain, params):
     return model, result
 
 def mlp(Xtrain, ytrain, params):
+    activation = ['sigmoid', 'relu', 'tanh']
     es = EarlyStopping(monitor='val_loss',mode='min',verbose=1,patience=15)
     model = Sequential()
-    model.add(Dense(units=params['units'], activation=params['activation'], input_dim=window_size, kernel_regularizer=l1(params['l1_reg'])))
+    model.add(Dense(units=params['units'], activation=activation[params['activation']], input_dim=window_size, kernel_regularizer=l1(params['l1_reg'])))
     model.add(Dropout(rate=params['rate']))
     model.add(Dense(1))
     model.summary()
@@ -276,7 +282,10 @@ if(arg.tune): # default without -r flag
     logger.info("Dropout Rate:%s", best['rate'])
     logger.info("L1 Regulizer:%s", best['l1_reg'])
 
-else:
+else: 
+    '''
+        Train Model using the hyperparam saved in the tuning folder
+    '''
     save_model_path = Path(os.path.join(proj_root, "reports", "trained_models", model_type))
     if not save_model_path.exists():
         save_model_path.mkdir(parents=True) # set parents = True to create nested folder as well
@@ -288,9 +297,12 @@ else:
         df_train, df_test = get_dataframe(params['target'], use_intra=True)
         Xtrain, ytrain, Xtest, ytest = format_data(df_train, df_test, window=params['window_size'])
 
-        # train the model with the saved hyperparameter 
-        model, result = lstm(Xtrain, ytrain, params)
-        
+        # train the model with the saved hyperparameter
+        if(model_type == "lstm"):
+            model, result = lstm(Xtrain, ytrain, params)
+        else:
+            model, result = mlp(Xtrain, ytrain, params)
+
         # save model
         model_name = str(params['target']) + "_" + str(params['window_size'])
         save_model_dir = os.path.join(str(save_model_path), "", model_name, "")  
