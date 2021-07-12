@@ -1,6 +1,5 @@
 import numpy as np
 import pandas as pd
-import statsmodels.api as sm
 from sklearn.metrics import mean_squared_error
 from keras.callbacks import EarlyStopping
 from keras.models import Sequential
@@ -13,7 +12,6 @@ from keras.legacy import interfaces
 from keras import *
 
 # Custom classes for alpha-RNNs and alpha_t-RNNs
-from alphaRNN import *
 from alphatRNN import *
 
 # For hyperopt (parameter optimization)
@@ -22,9 +20,10 @@ from hyperopt.pyll.base import scope #quniform returns float, some parameters re
 from tqdm.keras import TqdmCallback
 
 import src.features.utils as utils
-import os
-import logging
+import os, json
 import argparse
+from pathlib import Path 
+import random
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-w", "--window_size", type=int, required=True)
@@ -34,8 +33,12 @@ arg = parser.parse_args()
 
 target = [arg.target]
 window_size = arg.window_size
-
 use_intra = arg.intra # by default use intra data, turn off by calling the flag -x in the command line 
+test_size = 60
+
+# find the root directory of the project
+proj_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) 
+
 if use_intra:
     btc_intraday = 'https://raw.githubusercontent.com/Giant316/crypto_scrapy/main/BTC_intraday.csv'
     eth_intraday = 'https://raw.githubusercontent.com/Giant316/crypto_scrapy/main/ETH_intraday.csv'
@@ -117,9 +120,14 @@ space = {'rate'       : hp.uniform('rate',0.01,0.5),
          'l1_reg'     : hp.uniform('l1_reg',0.01,0.5)
         }
 
+save_result_path = Path(os.path.join(proj_root, "reports", "crossval", "hybrid", target[0] + "_" + str(window_size)))
+if not save_result_path.exists():
+    save_result_path.mkdir(parents=True) 
+save_result_dir = os.path.join(str(save_result_path), "")
+
 def tune(params):
     es = EarlyStopping(monitor='val_loss',mode='min',verbose=1,patience=15)
-    btscv = utils.BlockingTimeSeriesSplit(n_splits=10, test_size=90)
+    btscv = utils.BlockingTimeSeriesSplit(n_splits=10, test_size=window_size + test_size)
     cv_train = []
     cv_test = []
     for train_index, test_index in btscv.split(df_train):
@@ -127,7 +135,8 @@ def tune(params):
         cv_test.append(df_train.iloc[test_index])
     
     rmse = []
-    for train, test in zip(cv_train, cv_test):
+    res = {}
+    for idx, (train, test) in enumerate(zip(cv_train, cv_test)):
         cv_Xtrain, cv_ytrain, cv_Xtest, cv_ytest = format_data(train, test, window=window_size)
         # Alpha RNN model
         seed = 0 
@@ -135,35 +144,28 @@ def tune(params):
         model.add(AlphatRNN(params['units'], activation='tanh', recurrent_activation='sigmoid', kernel_initializer=keras.initializers.glorot_uniform(seed), bias_initializer=keras.initializers.glorot_uniform(seed), recurrent_initializer=keras.initializers.orthogonal(seed), kernel_regularizer=l1(params['l1_reg']), input_shape=(cv_Xtrain.shape[1], cv_Xtrain.shape[-1]), unroll=True))  
         model.add(Dense(1, kernel_initializer=keras.initializers.glorot_uniform(seed), bias_initializer=keras.initializers.glorot_uniform(seed), kernel_regularizer=l1(params['l1_reg'])))
         model.compile(loss='mean_squared_error', optimizer='adam')
-        model.fit(cv_Xtrain, cv_ytrain,
+        result = model.fit(cv_Xtrain, cv_ytrain,
                     epochs=200, 
                     batch_size=params['batch_size'],
-                    callbacks = [es,TqdmCallback(verbose=1)],shuffle=False)
+                    callbacks = [es],shuffle=False)
 
         cv_predictions = model.predict(cv_Xtest).reshape(-1,)
         cv_trueValues = cv_ytest
+        res[idx] = {"preds": cv_predictions.tolist(), "true": cv_trueValues.tolist(), "params": params, "history": result.history, "rmse":rmse}
         rmse.append(np.sqrt(mean_squared_error(cv_trueValues, cv_predictions)))
-        
+    num = str(random.random())[2:]
+    with open(f"{save_result_dir}{num}.txt", "w") as file:
+        json.dump(res, file)  
     return {'loss': np.mean(rmse), 'status': STATUS_OK, 'model': model, 'params': params}
 
 trials = Trials()
-best = fmin(tune, space, algo=tpe.suggest, max_evals=50, trials=trials)
+best = fmin(tune, space, algo=tpe.suggest, max_evals=100, trials=trials)
 
 best_model = trials.results[np.argmin([r['loss'] for r in trials.results])]['model']
 best_params = trials.results[np.argmin([r['loss'] for r in trials.results])]['params']
 
+best_model.save(f"{save_result_dir}model")
+with open(f"{save_result_dir}best_params.txt", "w") as file:
+    json.dump(best_params, file)
+
 print("Hyperparameter Tuning Completed.")
-print(best)
-
-# log tuning results 
-# find the root directory of the project
-proj_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) 
-
-logging.basicConfig(filename= f"{proj_root}/reports/hybrid_tuning/{target[0]}_{window_size}.log", format='%(asctime)s %(message)s')
-logger = logging.getLogger() # create a logger object
-logger.setLevel(logging.INFO)
-logger.info("Values of Best parameters of %s with window size:%s", target[0], window_size)
-logger.info("Batch Size:%s", best['batch_size'])
-logger.info("Hidden Units:%s", best['units'])
-logger.info("Dropout Rate:%s", best['rate'])
-logger.info("L1 Regulizer:%s", best['l1_reg'])
