@@ -13,9 +13,10 @@ from hyperopt.pyll.base import scope #quniform returns float, some parameters re
 from tqdm.keras import TqdmCallback
 
 import src.features.utils as utils
-import logging
-import os 
 import argparse
+import os, json
+from pathlib import Path 
+import random
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-w", "--window_size", type=int, required=True)
@@ -23,11 +24,15 @@ parser.add_argument("-t", "--target", type=str, required=True)
 parser.add_argument("-x", "--intra", action="store_false")
 arg = parser.parse_args()
 
+# find the root directory of the project
+proj_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) 
+
 # Experiment Setup
 target = [arg.target]
 window_size = arg.window_size
-
 use_intra = arg.intra
+test_size = 60
+
 if use_intra:
     btc_intraday = 'https://raw.githubusercontent.com/Giant316/crypto_scrapy/main/BTC_intraday.csv'
     eth_intraday = 'https://raw.githubusercontent.com/Giant316/crypto_scrapy/main/ETH_intraday.csv'
@@ -71,7 +76,6 @@ else:
     df_xrp = load_data(xrp_path, "XRP")
     df = pd.concat([df_btc[['BTC']].dropna().loc['2016':'2020'], df_eth[['ETH']].dropna().loc['2016':'2020'], df_xrp[['XRP']].dropna().loc['2016':'2020']], axis=1)
 
-df = df.iloc[:int(len(df)/10)]
 train_weight = 0.8
 split = int(len(df)*train_weight)
 df_train = df.iloc[:split]
@@ -108,13 +112,20 @@ space = {'rate'       : hp.uniform('rate',0.01,0.5),
          'units'      : scope.int(hp.quniform('units',10,100,5)),
          'batch_size' : scope.int(hp.quniform('batch_size',100,250,25)),
          'l1_reg'     : hp.uniform('l1_reg',0.01,0.5),
-         'activation' : hp.choice('activation', ['relu', 'tanh', 'sigmoid'])
+         'activation' : hp.choice('activation', ['sigmoid', 'relu', 'tanh'])
         }
 
+save_result_path = Path(os.path.join(proj_root, "reports", "crossval", "mlp", target[0] + "_" + str(window_size)))
+if not save_result_path.exists():
+    save_result_path.mkdir(parents=True) 
+save_result_dir = os.path.join(str(save_result_path), "")
+
 def tune(params):
+
     es = EarlyStopping(monitor='val_loss',mode='min',verbose=1,patience=15)
 
-    btscv = utils.BlockingTimeSeriesSplit(n_splits=10, test_size=90)
+    btscv = utils.BlockingTimeSeriesSplit(n_splits=10, test_size=window_size + test_size)
+    #btscv = BlockingTimeSeriesSplit(n_splits=2, test_size=30)
     cv_train = []
     cv_test = []
     for train_index, test_index in btscv.split(df_train):
@@ -122,7 +133,8 @@ def tune(params):
         cv_test.append(df_train.iloc[test_index])
     
     rmse = []
-    for train, test in zip(cv_train, cv_test):
+    res = {}
+    for idx, (train, test) in enumerate(zip(cv_train, cv_test)):
         # Generate data for cross validation with given window
         cv_Xtrain, cv_ytrain, cv_Xtest, cv_ytest = format_data(train, test, window=window_size)
         
@@ -131,7 +143,6 @@ def tune(params):
         model.add(Dense(units=params['units'], activation=params['activation'], input_dim=window_size, kernel_regularizer=l1(params['l1_reg'])))
         model.add(Dropout(rate=params['rate']))
         model.add(Dense(1))
-        model.summary()
 
         #optimizer = keras.optimizers.Adam(lr=0.001, epsilon=1e-08)
         model.compile(optimizer='Adam', loss='mean_squared_error')
@@ -141,36 +152,30 @@ def tune(params):
         cv_ytrain = cv_ytrain.reshape(cv_ytrain.shape[0:2])
         cv_Xtest = cv_Xtest.reshape(cv_Xtest.shape[0:2])
         cv_ytest = cv_ytest.reshape(cv_ytest.shape[0:2])
+        
         result = model.fit(cv_Xtrain, cv_ytrain, verbose=0, validation_split=0.1,
                        batch_size=params['batch_size'],
                        epochs=200,
-                       callbacks = [es,TqdmCallback(verbose=1)]
+                       callbacks = [es]
                       )
 
         cv_predictions = model.predict(cv_Xtest).reshape(-1,)
         cv_trueValues = cv_ytest
+        res[idx] = {"preds": cv_predictions.tolist(), "true": cv_trueValues.tolist(), "params": params, "history": result.history}
         rmse.append(np.sqrt(mean_squared_error(cv_trueValues, cv_predictions)))
-        
-    return {'loss': np.mean(rmse), 'status': STATUS_OK, 'model': model, 'params': params}
+    num = str(random.random())[2:]
+    with open(f"{save_result_dir}{num}.txt", "w") as file:
+        json.dump(res, file)  
+    return {'loss': np.mean(rmse), 'status': STATUS_OK, 'model': model, 'params': params, "detailed_result": res, "rmse":rmse}
 
 trials = Trials()
-best = fmin(tune, space, algo=tpe.suggest, max_evals=50, trials=trials)
+best = fmin(tune, space, algo=tpe.suggest, max_evals=100, trials=trials)
 
 best_model = trials.results[np.argmin([r['loss'] for r in trials.results])]['model']
 best_params = trials.results[np.argmin([r['loss'] for r in trials.results])]['params']
 
+best_model.save(f"{save_result_dir}model")
+with open(f"{save_result_dir}best_params.txt", "w") as file:
+    json.dump(best_params, file)
+
 print("Hyperparameter Tuning Completed.")
-print(best)
-
-# log tuning results 
-# find the root directory of the project
-proj_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) 
-
-logging.basicConfig(filename= f"{proj_root}/reports/mlp_tuning/{target[0]}_{window_size}.log", format='%(asctime)s %(message)s')
-logger = logging.getLogger() # create a logger object
-logger.setLevel(logging.INFO)
-logger.info("Values of Best parameters of %s with window size:%s", target[0], window_size)
-logger.info("Batch Size:%s", best['batch_size'])
-logger.info("Hidden Units:%s", best['units'])
-logger.info("Dropout Rate:%s", best['rate'])
-logger.info("L1 Regulizer:%s", best['l1_reg'])    
