@@ -161,12 +161,12 @@ def tune(params):
 
         cv_predictions = model.predict(cv_Xtest).reshape(-1,)
         cv_trueValues = cv_ytest
-        res[idx] = {"preds": cv_predictions.tolist(), "true": cv_trueValues.tolist(), "params": params, "history": result.history}
+        res[idx] = {"preds": cv_predictions.tolist(), "true": cv_trueValues.tolist(), "params": params, "history": result.history, "rmse":rmse}
         rmse.append(np.sqrt(mean_squared_error(cv_trueValues, cv_predictions)))
     num = str(random.random())[2:]
     with open(f"{save_result_dir}{num}.txt", "w") as file:
         json.dump(res, file)  
-    return {'loss': np.mean(rmse), 'status': STATUS_OK, 'model': model, 'params': params, "detailed_result": res, "rmse":rmse}
+    return {'loss': np.mean(rmse), 'status': STATUS_OK, 'model': model, 'params': params}
 
 trials = Trials()
 best = fmin(tune, space, algo=tpe.suggest, max_evals=100, trials=trials)
