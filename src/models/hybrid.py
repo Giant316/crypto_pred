@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 from sklearn.metrics import mean_squared_error
-from keras.callbacks import EarlyStopping
+from keras.callbacks import EarlyStopping, ModelCheckpoint
 from keras.models import Sequential
 from keras.layers import Dense
 from keras.regularizers import l1
@@ -31,13 +31,14 @@ parser.add_argument("-t", "--target", type=str, required=True)
 parser.add_argument("-x", "--intra", action="store_false") # without input this argument: arg.intra = True 
 arg = parser.parse_args()
 
-target = [arg.target]
-window_size = arg.window_size
-use_intra = arg.intra # by default use intra data, turn off by calling the flag -x in the command line 
-test_size = 60
-
 # find the root directory of the project
 proj_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) 
+
+# Experiment Setup
+target = [arg.target]
+window_size = arg.window_size
+use_intra = arg.intra
+test_size = 60
 
 if use_intra:
     btc_intraday = 'https://raw.githubusercontent.com/Giant316/crypto_scrapy/main/BTC_intraday.csv'
@@ -124,9 +125,13 @@ save_result_path = Path(os.path.join(proj_root, "reports", "crossval", "hybrid",
 if not save_result_path.exists():
     save_result_path.mkdir(parents=True) 
 save_result_dir = os.path.join(str(save_result_path), "")
+checkpoint_dir = os.path.join(save_result_dir, "checkpoint", "")
 
 def tune(params):
+    num = str(random.random())[2:]
+    Path(checkpoint_dir + num).mkdir(parents=True) 
     es = EarlyStopping(monitor='val_loss',mode='min',verbose=1,patience=15)
+    checkpoint = ModelCheckpoint(checkpoint_dir + num, monitor='val_loss', verbose=1, save_best_only=True, mode='min')
     btscv = utils.BlockingTimeSeriesSplit(n_splits=10, test_size=window_size + test_size)
     cv_train = []
     cv_test = []
@@ -147,13 +152,13 @@ def tune(params):
         result = model.fit(cv_Xtrain, cv_ytrain,
                     epochs=200, 
                     batch_size=params['batch_size'],
-                    callbacks = [es],shuffle=False)
+                    callbacks = [es, checkpoint],shuffle=False)
 
         cv_predictions = model.predict(cv_Xtest).reshape(-1,)
         cv_trueValues = cv_ytest
         res[idx] = {"preds": cv_predictions.tolist(), "true": cv_trueValues.tolist(), "params": params, "history": result.history, "rmse":rmse}
         rmse.append(np.sqrt(mean_squared_error(cv_trueValues, cv_predictions)))
-    num = str(random.random())[2:]
+    
     with open(f"{save_result_dir}{num}.txt", "w") as file:
         json.dump(res, file)  
     return {'loss': np.mean(rmse), 'status': STATUS_OK, 'model': model, 'params': params}

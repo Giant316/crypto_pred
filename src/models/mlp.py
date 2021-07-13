@@ -5,7 +5,7 @@ from sklearn.metrics import mean_squared_error
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Dense, Dropout
 from tensorflow.keras.regularizers import l1
-from tensorflow.keras.callbacks import EarlyStopping
+from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
 
 # For hyperopt (parameter optimization)
 from hyperopt import Trials, STATUS_OK, tpe, fmin, hp
@@ -21,7 +21,7 @@ import random
 parser = argparse.ArgumentParser()
 parser.add_argument("-w", "--window_size", type=int, required=True)
 parser.add_argument("-t", "--target", type=str, required=True)
-parser.add_argument("-x", "--intra", action="store_false")
+parser.add_argument("-x", "--intra", action="store_false") # without input this argument: arg.intra = True 
 arg = parser.parse_args()
 
 # find the root directory of the project
@@ -119,11 +119,13 @@ save_result_path = Path(os.path.join(proj_root, "reports", "crossval", "mlp", ta
 if not save_result_path.exists():
     save_result_path.mkdir(parents=True) 
 save_result_dir = os.path.join(str(save_result_path), "")
+checkpoint_dir = os.path.join(save_result_dir, "checkpoint", "")
 
 def tune(params):
-
+    num = str(random.random())[2:]
+    Path(checkpoint_dir + num).mkdir(parents=True) 
     es = EarlyStopping(monitor='val_loss',mode='min',verbose=1,patience=15)
-
+    checkpoint = ModelCheckpoint(checkpoint_dir + num, monitor='val_loss', verbose=1, save_best_only=True, mode='min')
     btscv = utils.BlockingTimeSeriesSplit(n_splits=10, test_size=window_size + test_size)
     #btscv = BlockingTimeSeriesSplit(n_splits=2, test_size=30)
     cv_train = []
@@ -156,14 +158,14 @@ def tune(params):
         result = model.fit(cv_Xtrain, cv_ytrain, verbose=0, validation_split=0.1,
                        batch_size=params['batch_size'],
                        epochs=200,
-                       callbacks = [es]
+                       callbacks = [es, checkpoint]
                       )
 
         cv_predictions = model.predict(cv_Xtest).reshape(-1,)
         cv_trueValues = cv_ytest
         res[idx] = {"preds": cv_predictions.tolist(), "true": cv_trueValues.tolist(), "params": params, "history": result.history, "rmse":rmse}
         rmse.append(np.sqrt(mean_squared_error(cv_trueValues, cv_predictions)))
-    num = str(random.random())[2:]
+    
     with open(f"{save_result_dir}{num}.txt", "w") as file:
         json.dump(res, file)  
     return {'loss': np.mean(rmse), 'status': STATUS_OK, 'model': model, 'params': params}
