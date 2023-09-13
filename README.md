@@ -1,7 +1,7 @@
 crypto_predict
 ==============================
 
-Comparing model's accuracyycy for predicting cryptocurrency prices
+Comparing model's accuracy for predicting cryptocurrency prices
 
 Project Organization
 ------------
